@@ -1,14 +1,15 @@
 from langgraph.graph import StateGraph, END, START
-from typing import TypedDict, List, Dict
+from pydantic import BaseModel
+from typing import List, Dict
 import mysql.connector
 import os
 from urllib.parse import urlparse
 from utils import llm_invoke
 
-class AgentState(TypedDict):
+class AgentState(BaseModel):
     user_input: str
-    sql_query: str
-    results: List[Dict]
+    sql_query: str = ""
+    results: List[Dict] = []
 
 db_url = os.getenv('MYSQL_URL')
 if db_url:

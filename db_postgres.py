@@ -1,15 +1,16 @@
 from langgraph.graph import StateGraph, END, START
-from typing import TypedDict, List, Dict
+from pydantic import BaseModel
+from typing import List, Dict
 import psycopg2
 import psycopg2.extras
 import os
 from urllib.parse import urlparse
 from utils import llm_invoke
 
-class AgentState(TypedDict):
+class AgentState(BaseModel):
     user_input: str
-    sql_query: str
-    results: List[Dict]
+    sql_query: str = ""
+    results: List[Dict] = []
 
 db_url = os.getenv('DB_URL')
 if db_url:

@@ -16,7 +16,7 @@ csv_app_graph = get_csv_workflow()
 excel_app_graph = get_excel_workflow()
 mysql_app_graph = get_mysql_workflow()
 
-@app.post("/ask")
+@app.post("/ask_postgres")
 async def ask_question(user_input: str = Form(...)):
     if not db_config:
         return JSONResponse(

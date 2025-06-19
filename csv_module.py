@@ -1,12 +1,13 @@
 from langgraph.graph import StateGraph, END, START
-from typing import TypedDict, List, Dict
+from pydantic import BaseModel
+from typing import List, Dict
 import pandas as pd
 from utils import llm_invoke, get_csv_schema
 
-class AgentState(TypedDict):
+class AgentState(BaseModel):
     user_input: str
-    sql_query: str
-    results: List[Dict]
+    sql_query: str = "" 
+    results: List[Dict] = []
     schema: str
     df: pd.DataFrame
 
@@ -41,3 +42,5 @@ def get_workflow():
     workflow.add_edge("generate_code", "execute_code")
     workflow.add_edge("execute_code", END)
     return workflow.compile()
+
+

@@ -1,12 +1,13 @@
 from langgraph.graph import StateGraph, END, START
-from typing import TypedDict, List, Dict
+from pydantic import BaseModel
+from typing import List, Dict
 import pandas as pd
 from utils import llm_invoke, get_excel_schema
 
-class AgentState(TypedDict):
+class AgentState(BaseModel):
     user_input: str
-    sql_query: str
-    results: List[Dict]
+    sql_query: str = ""
+    results: List[Dict] = []
     schema: str
     sheets: dict
 
