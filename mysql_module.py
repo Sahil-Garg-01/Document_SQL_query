@@ -5,6 +5,8 @@ import mysql.connector
 import os
 from urllib.parse import urlparse
 from utils import llm_invoke
+from dotenv import load_dotenv
+load_dotenv()
 
 class AgentState(BaseModel):
     user_input: str
@@ -54,24 +56,31 @@ def generate_sql(state: AgentState) -> AgentState:
     Given the database schema:
     {schema}
     
-    Convert the following request to a SQL query. Select only the relevant columns needed to answer the request. Avoid using SELECT *. Return only the SQL query.
-    Request: '{state["user_input"]}'
+    Convert the following request to a SQL query. Select only the relevant columns needed to answer the request. Avoid using SELECT *. 
+    Return ONLY the SQL query, no explanations, no comments, no markdown, no code fences, and no language tags.
+    Request: '{state.user_input}'
     """
     sql_query = llm_invoke(prompt)
-    return {**state, "sql_query": sql_query}
+    return state.copy(update={"sql_query": sql_query})
 
 def execute_query(state: AgentState) -> AgentState:
     conn = get_db_conn()
     cursor = conn.cursor(dictionary=True)
+    sql = state.sql_query.strip()
+    # Remove code fences if present
+    if sql.startswith("```"):
+        sql = sql.lstrip("`")
+        sql = sql.replace("sql", "", 1).strip()
+        sql = sql.rstrip("`").strip()
     try:
-        cursor.execute(state["sql_query"])
+        cursor.execute(sql)
         results = cursor.fetchall()
     except mysql.connector.Error as e:
         results = [{"error": str(e)}]
     finally:
         cursor.close()
         conn.close()
-    return {**state, "results": results}
+    return state.copy(update={"results": results})
 
 def get_workflow():
     workflow = StateGraph(AgentState)
