@@ -8,11 +8,13 @@ class AgentState(BaseModel):
     user_input: str
     sql_query: str = ""
     results: List[Dict] = []
-    schema: str
+    excel_schema: str
     sheets: dict
 
+    model_config = {"arbitrary_types_allowed": True}
+
 def generate_excel_code(state: AgentState) -> AgentState:
-    schema = state["schema"]
+    schema = state["excel_schema"]
     prompt = f"""
     Given the following Excel file schema (multiple sheets possible):
     {schema}

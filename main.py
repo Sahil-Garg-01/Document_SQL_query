@@ -48,7 +48,7 @@ async def ask_csv(user_input: str = Form(...), file: UploadFile = File(...)):
         )
     df = pd.read_csv(file.file)
     schema = get_csv_schema(df)
-    result = csv_app_graph.invoke({"user_input": user_input, "schema": schema, "df": df})
+    result = csv_app_graph.invoke({"user_input": user_input, "csv_schema": schema, "df": df})
     df_result = pd.DataFrame(result["results"])
     if df_result.empty:
         return JSONResponse(
@@ -73,7 +73,7 @@ async def ask_excel(user_input: str = Form(...), file: UploadFile = File(...)):
         )
     sheets = pd.read_excel(file.file, sheet_name=None)
     schema = get_excel_schema(sheets)
-    result = excel_app_graph.invoke({"user_input": user_input, "schema": schema, "sheets": sheets})
+    result = excel_app_graph.invoke({"user_input": user_input, "excel_schema": schema, "sheets": sheets})
     df_result = pd.DataFrame(result["results"])
     if df_result.empty:
         return JSONResponse(

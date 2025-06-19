@@ -8,7 +8,7 @@ if not google_api_key:
     raise ValueError("GOOGLE_API_KEY not found in environment variables")
 
 genai.configure(api_key=google_api_key)
-model = genai.GenerativeModel('gemini-pro')
+model = genai.GenerativeModel('gemini-2.0-flash')
 
 def llm_invoke(prompt: str) -> str:
     response = model.generate_content(prompt)

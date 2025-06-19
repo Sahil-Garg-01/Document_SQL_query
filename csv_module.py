@@ -1,38 +1,48 @@
 from langgraph.graph import StateGraph, END, START
 from pydantic import BaseModel
-from typing import List, Dict
+from typing import List, Dict, Optional
 import pandas as pd
 from utils import llm_invoke, get_csv_schema
 
 class AgentState(BaseModel):
     user_input: str
-    sql_query: str = "" 
+    sql_query: Optional[str] = None
     results: List[Dict] = []
-    schema: str
+    csv_schema: str  
     df: pd.DataFrame
 
+    model_config = {"arbitrary_types_allowed": True}
+
 def generate_pandas_code(state: AgentState) -> AgentState:
-    schema = state["schema"]
+    schema = state.csv_schema
     prompt = f"""
     Given the CSV schema:
     {schema}
-    
-    Convert the following request to a pandas DataFrame operation in Python. Return only the code to get the answer as a DataFrame.
-    Request: '{state["user_input"]}'
+
+    Convert the following request to a single-line pandas DataFrame operation in Python that returns a DataFrame.
+    Return ONLY the code, no explanations, no imports, no function definitions, no markdown, no comments, no print statements, and do NOT create a new DataFrame.
+    Assume the DataFrame is already loaded as 'df'.
+    Request: '{state.user_input}'
     """
     code = llm_invoke(prompt)
-    return {**state, "sql_query": code}
+    return state.copy(update={"sql_query": code})
 
 def execute_pandas_code(state: AgentState) -> AgentState:
-    df = state["df"]
+    df = state.df
+    code = state.sql_query.strip()
+    # Remove code fences if present
+    if code.startswith("```"):
+        code = code.lstrip("`")
+        code = code.replace("python", "", 1).strip()
+        code = code.rstrip("`").strip()
     try:
-        result = eval(state["sql_query"], {"df": df, "pd": pd})
+        result = eval(code, {"df": df, "pd": pd})
         if isinstance(result, pd.DataFrame):
-            return {**state, "results": result.to_dict(orient="records")}
+            return state.copy(update={"results": result.to_dict(orient="records")})
         else:
-            return {**state, "results": [{"result": str(result)}]}
+            return state.copy(update={"results": [{"result": str(result)}]})
     except Exception as e:
-        return {**state, "results": [{"error": str(e)}]}
+        return state.copy(update={"results": [{"error": str(e)}]})
 
 def get_workflow():
     workflow = StateGraph(AgentState)
