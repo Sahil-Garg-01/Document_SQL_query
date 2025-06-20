@@ -16,22 +16,49 @@ class AgentState(BaseModel):
 
 def generate_excel_code(state: AgentState) -> AgentState:
     schema = state.excel_schema
-    prompt = f"""
-    Given the following Excel file schema (multiple sheets possible):
-    {schema}
+    # Extract sheet names for prompt clarity
+    sheet_names = []
+    for line in schema.splitlines():
+        if ":" in line:
+            sheet_names.append(line.split(":")[0].strip())
+    if len(sheet_names) == 1:
+        sheet_hint = f"The main sheet is called '{sheet_names[0]}'."
+    else:
+        sheet_hint = f"The sheets are: {', '.join([f"'{s}'" for s in sheet_names])}."
 
-    Convert the following request to a single-line pandas DataFrame operation in Python that returns a DataFrame.
-    Return ONLY the code, no explanations, no comments, no markdown, no print statements, and do NOT create a new DataFrame.
-    Assume the Excel sheets are loaded as a dictionary of DataFrames called 'sheets', where keys are sheet names.
-    Request: '{state.user_input}'
-    """
+        prompt = f"""
+Given the following Excel file schema:
+{schema}
+
+{sheet_hint}
+
+Write a single-line pandas DataFrame operation in Python that answers the following request.
+- Use only the sheets and columns shown above.
+- Assume the Excel sheets are loaded as a dictionary of DataFrames called 'sheets', where keys are sheet names.
+- Select only the relevant columns needed to answer the request (avoid selecting all columns).
+- Use correct sheet and column names as per the schema.
+- If a merge (join) is needed, use the correct keys.
+- If columns with the same name exist in both DataFrames, rename columns before merging to ensure uniqueness.
+- When merging DataFrames, always specify the 'suffixes' parameter with unique values (e.g., suffixes=('_left', '_right')) to avoid duplicate column names.
+- If aggregation, grouping, or filtering is needed, do so as per the request.
+- Output only valid, executable Python code (no ellipsis, no incomplete lines, no comments, no markdown, no code fences, no print statements, and do NOT create a new DataFrame).
+- Return ONLY the code, nothing else.
+
+Request: '{state.user_input}'
+"""
     code = llm_invoke(prompt)
+    # Clean code fences if present
+    code = code.strip()
+    if code.startswith("```"):
+        code = code.lstrip("`")
+        code = code.replace("python", "", 1).strip()
+        code = code.rstrip("`").strip()
     return state.copy(update={"sql_query": code})
 
 def execute_excel_code(state: AgentState) -> AgentState:
     sheets = state.sheets
     code = state.sql_query.strip()
-    # Clean code fences if present
+    # Clean code fences if present (defensive)
     if code.startswith("```"):
         code = code.lstrip("`")
         code = code.replace("python", "", 1).strip()
