@@ -41,26 +41,50 @@ def get_schema() -> str:
     cursor = conn.cursor()
     try:
         cursor.execute("""
-            SELECT table_name, column_name, data_type
+            SELECT table_name, column_name
             FROM information_schema.columns
             WHERE table_schema = 'public'
         """)
-        schema = []
-        for table, column, dtype in cursor.fetchall():
-            schema.append(f"Table: {table}, Column: {column} ({dtype})")
-        return "\n".join(schema)
+        schema = {}
+        for table, column in cursor.fetchall():
+            schema.setdefault(table, []).append(column)
+        schema_lines = ["Tables and columns:"]
+        for table, columns in schema.items():
+            schema_lines.append(f"{table}: {', '.join(columns)}")
+        return "\n".join(schema_lines)
     finally:
         cursor.close()
         conn.close()
 
 def generate_sql(state: AgentState) -> AgentState:
     schema = get_schema()
+    # Dynamically extract all table names from the schema string
+    table_names = []
+    for line in schema.splitlines():
+        if line.startswith("Table:"):
+            table_names.append(line.split("Table:")[1].strip())
+    # If only one table, use it as the main table; else, list all
+    if len(table_names) == 1:
+        table_hint = f"The main table is called '{table_names[0]}'."
+    else:
+        table_hint = f"The tables are: {', '.join([f"'{t}'" for t in table_names])}."
+
     prompt = f"""
-    Given the database schema:
+    Given the following PostgreSQL database schema:
     {schema}
 
-    Convert the following request to a SQL query. Select only the relevant columns needed to answer the request. Avoid using SELECT *. 
+    {table_hint}
+
+    Convert the following natural language request to a valid SQL query for this schema.
     Return ONLY the SQL query, no explanations, no comments, no markdown, no code fences, and no language tags.
+    - Use only the tables and columns shown above.
+    - Select only the relevant columns needed to answer the request (avoid SELECT *) c.
+    - Use correct table and column names as per the schema.
+    - If a JOIN is needed, use the correct keys.
+    - If no exact column match, return an empty query and note the issue.
+    - If aggregation, grouping, or filtering is needed, do so as per the request.
+    - Return ONLY the SQL query, no explanations, no comments, no markdown, no code fences, and no language tags.
+
     Request: '{state.user_input}'
     """
     sql_query = llm_invoke(prompt)
