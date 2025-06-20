@@ -39,7 +39,6 @@ def execute_excel_code(state: AgentState) -> AgentState:
     try:
         result = eval(code, {"sheets": sheets, "pd": pd})
         if isinstance(result, pd.DataFrame):
-            print("Excel results:", result)
             return state.copy(update={"results": result.to_dict(orient="records")})
         else:
             return state.copy(update={"results": [{"result": str(result)}]})

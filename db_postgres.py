@@ -64,6 +64,7 @@ def generate_sql(state: AgentState) -> AgentState:
     Request: '{state.user_input}'
     """
     sql_query = llm_invoke(prompt)
+    print("Generated SQL:", sql_query)
     return state.copy(update={"sql_query": sql_query})
 
 def execute_query(state: AgentState) -> AgentState:
