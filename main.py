@@ -7,7 +7,7 @@ import io
 import os
 import json
 
-from db_postgres import get_workflow as get_pg_workflow, db_config
+from db_postgres import PostgresQueryAgent
 from csv_module import CSVQueryAgent
 from excel_module import get_workflow as get_excel_workflow
 from utils import get_csv_schema, get_excel_schema
@@ -17,34 +17,56 @@ class UserInput(BaseModel):
 
 app = FastAPI()
 
-app_graph = get_pg_workflow()
+app_graph = PostgresQueryAgent().get_workflow()
 csv_app_graph = CSVQueryAgent().get_workflow()
 excel_app_graph = get_excel_workflow()
 mysql_app_graph = get_mysql_workflow()
 
+
+
 @app.post("/ask_postgres")
-async def ask_question(payload: UserInput):
-    user_input = payload.user_input
-    if not db_config:
-        return JSONResponse(
-            status_code=400,
-            content={"warning": "No database URL provided. Please upload a CSV or Excel file using /ask_csv or /ask_excel endpoint."}
+async def ask_postgres(payload: UserInput):
+    """
+    Accepts a user query for the PostgreSQL database, runs the query using the Postgres agent,
+    and returns the results as a CSV file.
+    """
+    try:
+        user_input = payload.user_input
+        agent = PostgresQueryAgent()
+        if not agent.db_config:
+            return JSONResponse(
+                status_code=400,
+                content={"warning": "No database URL provided. Please upload a CSV or Excel file using /ask_csv or /ask_excel endpoint."}
+            )
+
+        # Run the Postgres agent workflow
+        workflow = agent.get_workflow()
+        result = workflow.invoke({"user_input": user_input})
+
+        # Prepare the result DataFrame
+        df_result = pd.DataFrame(result["results"])
+        if df_result.empty:
+            return JSONResponse(
+                status_code=200,
+                content={"message": "No results found for your query."}
+            )
+
+        # Stream the results as a downloadable CSV file
+        stream = io.StringIO()
+        df_result.to_csv(stream, index=False)
+        stream.seek(0)
+        return StreamingResponse(
+            stream,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=results.csv"}
         )
-    result = app_graph.invoke({"user_input": user_input})
-    df = pd.DataFrame(result["results"])
-    if df.empty:
+    except Exception as e:
         return JSONResponse(
-            status_code=200,
-            content={"message": "No results found for your query."}
+            status_code=500,
+            content={"error": f"Internal server error: {str(e)}"}
         )
-    stream = io.StringIO()
-    df.to_csv(stream, index=False)
-    stream.seek(0)
-    return StreamingResponse(
-        stream,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=results.csv"}
-    )
+
+
 
 @app.post("/ask_csv")
 async def ask_csv(user_input: str = Form(...), file: UploadFile = File(...)):
@@ -106,6 +128,10 @@ async def ask_csv(user_input: str = Form(...), file: UploadFile = File(...)):
         )
 
 
+
+
+
+
 @app.post("/ask_excel")
 async def ask_excel(user_input: str = Form(...), file: UploadFile = File(...)):
     user_input_dict = json.loads(user_input)
@@ -137,6 +163,10 @@ async def ask_excel(user_input: str = Form(...), file: UploadFile = File(...)):
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=results.csv"}
     )
+
+
+
+
 
 
 @app.post("/ask_mysql")
