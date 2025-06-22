@@ -8,7 +8,7 @@ import os
 import json
 
 from db_postgres import get_workflow as get_pg_workflow, db_config
-from csv_module import get_workflow as get_csv_workflow
+from csv_module import CSVQueryAgent
 from excel_module import get_workflow as get_excel_workflow
 from utils import get_csv_schema, get_excel_schema
 
@@ -18,7 +18,7 @@ class UserInput(BaseModel):
 app = FastAPI()
 
 app_graph = get_pg_workflow()
-csv_app_graph = get_csv_workflow()
+csv_app_graph = CSVQueryAgent().get_workflow()
 excel_app_graph = get_excel_workflow()
 mysql_app_graph = get_mysql_workflow()
 
@@ -48,31 +48,62 @@ async def ask_question(payload: UserInput):
 
 @app.post("/ask_csv")
 async def ask_csv(user_input: str = Form(...), file: UploadFile = File(...)):
-    # Parse user_input as JSON
-    user_input_dict = json.loads(user_input)
-    user_input_value = user_input_dict["user_input"]
-    if not file.filename.endswith('.csv'):
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Only CSV files are allowed"}
+    """
+    Accepts a user query and a CSV file upload, dynamically generates the schema,
+    runs the query using the CSV agent, and returns the results as a CSV file.
+    """
+    try:
+        # Parse user_input as JSON and extract the actual query string
+        user_input_dict = json.loads(user_input)
+        user_input_value = user_input_dict.get("user_input", "")
+        if not user_input_value:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Missing 'user_input' in request."}
+            )
+
+        # Validate file type
+        if not file.filename.lower().endswith('.csv'):
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Only CSV files are allowed."}
+            )
+
+        # Read the uploaded CSV file into a DataFrame
+        df = pd.read_csv(file.file)
+
+        # Dynamically generate the schema string from the DataFrame
+        schema = get_csv_schema(df)
+
+        # Run the CSV agent workflow
+        result = csv_app_graph.invoke({
+            "user_input": user_input_value,
+            "csv_schema": schema,
+            "df": df
+        })
+
+        # Prepare the result DataFrame
+        df_result = pd.DataFrame(result["results"])
+        if df_result.empty:
+            return JSONResponse(
+                status_code=200,
+                content={"message": "No results found for your query."}
+            )
+
+        # Stream the results as a downloadable CSV file
+        stream = io.StringIO()
+        df_result.to_csv(stream, index=False)
+        stream.seek(0)
+        return StreamingResponse(
+            stream,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=results.csv"}
         )
-    df = pd.read_csv(file.file)
-    schema = get_csv_schema(df)
-    result = csv_app_graph.invoke({"user_input": user_input_value, "csv_schema": schema, "df": df})
-    df_result = pd.DataFrame(result["results"])
-    if df_result.empty:
+    except Exception as e:
         return JSONResponse(
-            status_code=200,
-            content={"message": "No results found for your query."}
+            status_code=500,
+            content={"error": f"Internal server error: {str(e)}"}
         )
-    stream = io.StringIO()
-    df_result.to_csv(stream, index=False)
-    stream.seek(0)
-    return StreamingResponse(
-        stream,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=results.csv"}
-    )
 
 
 @app.post("/ask_excel")

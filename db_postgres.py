@@ -80,7 +80,9 @@ def generate_sql(state: AgentState) -> AgentState:
     - Use only the tables and columns shown above.
     - Select only the relevant columns needed to answer the request (avoid SELECT *) c.
     - Use correct table and column names as per the schema.
+    - Use case-insensitive matching (e.g., lower(column) = lower('value')) for text comparisons.
     - If a JOIN is needed, use the correct keys.
+    - If the request asks for a person's email, assume the name is in a column like 'name', 'username', or 'full_name'.
     - If no exact column match, return an empty query and note the issue.
     - If aggregation, grouping, or filtering is needed, do so as per the request.
     - Return ONLY the SQL query, no explanations, no comments, no markdown, no code fences, and no language tags.
@@ -88,7 +90,7 @@ def generate_sql(state: AgentState) -> AgentState:
     Request: '{state.user_input}'
     """
     sql_query = llm_invoke(prompt)
-    print("Generated SQL:", sql_query)
+    # print("Generated SQL:", sql_query)
     return state.copy(update={"sql_query": sql_query})
 
 def execute_query(state: AgentState) -> AgentState:
@@ -118,3 +120,30 @@ def get_workflow():
     workflow.add_edge("generate_sql", "execute_query")
     workflow.add_edge("execute_query", END)
     return workflow.compile()
+
+
+
+
+# user_input: "Find the top 5 users who spent the most in 2025, with their names, emails, total spent, number of orders, and average rating given (for ratings 4 or higher)"
+'''sql_query = SELECT 
+    u.id AS user_id,
+    u.name,
+    u.email,
+    COUNT(o.id) AS order_count,
+    SUM(p.price) AS total_spent,
+    ROUND(AVG(r.rating)::NUMERIC, 2) AS avg_rating_given
+FROM 
+    users u
+    INNER JOIN orders o ON u.id = o.user_id
+    INNER JOIN products p ON o.product_id = p.id
+    LEFT JOIN reviews r ON u.id = r.user_id AND p.id = r.product_id
+WHERE 
+    o.order_date BETWEEN '2025-01-01' AND '2025-12-31'
+    AND (r.rating IS NULL OR r.rating >= 4)
+GROUP BY 
+    u.id, u.name, u.email
+HAVING 
+    COUNT(o.id) >= 1
+ORDER BY 
+    total_spent DESC
+LIMIT 5;'''
