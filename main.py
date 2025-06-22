@@ -1,13 +1,13 @@
 from fastapi import FastAPI, UploadFile, File, Form, Body
 from pydantic import BaseModel
 from fastapi.responses import StreamingResponse, JSONResponse
-from mysql_module import get_workflow as get_mysql_workflow
 import pandas as pd
 import io
 import os
 import json
 
 from db_postgres import PostgresQueryAgent
+from mysql_module import MySQLQueryAgent
 from csv_module import CSVQueryAgent
 from excel_module import ExcelQueryAgent
 from utils import get_csv_schema, get_excel_schema
@@ -20,7 +20,7 @@ app = FastAPI()
 app_graph = PostgresQueryAgent().get_workflow()
 csv_app_graph = CSVQueryAgent().get_workflow()
 excel_app_graph = ExcelQueryAgent().get_workflow()
-mysql_app_graph = get_mysql_workflow()
+mysql_app_graph = MySQLQueryAgent().get_workflow()
 
 
 
@@ -198,25 +198,43 @@ async def ask_excel(user_input: str = Form(...), file: UploadFile = File(...)):
 
 @app.post("/ask_mysql")
 async def ask_mysql(payload: UserInput):
-    user_input = payload.user_input
-    from mysql_module import db_config as mysql_db_config
-    if not mysql_db_config:
-        return JSONResponse(
-            status_code=400,
-            content={"warning": "No MySQL URL provided. Please set MYSQL_URL in your .env file."}
+    """
+    Accepts a user query for the MySQL database, runs the query using the MySQL agent,
+    and returns the results as a CSV file.
+    """
+    try:
+        user_input = payload.user_input
+        from mysql_module import MySQLQueryAgent
+        agent = MySQLQueryAgent()
+        if not agent.db_config:
+            return JSONResponse(
+                status_code=400,
+                content={"warning": "No MySQL URL provided. Please set MYSQL_URL in your .env file."}
+            )
+
+        # Run the MySQL agent workflow
+        workflow = agent.get_workflow()
+        result = workflow.invoke({"user_input": user_input})
+
+        # Prepare the result DataFrame
+        df_result = pd.DataFrame(result["results"])
+        if df_result.empty:
+            return JSONResponse(
+                status_code=200,
+                content={"message": "No results found for your query."}
+            )
+
+        # Stream the results as a downloadable CSV file
+        stream = io.StringIO()
+        df_result.to_csv(stream, index=False)
+        stream.seek(0)
+        return StreamingResponse(
+            stream,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=results.csv"}
         )
-    result = mysql_app_graph.invoke({"user_input": user_input})
-    df = pd.DataFrame(result["results"])
-    if df.empty:
+    except Exception as e:
         return JSONResponse(
-            status_code=200,
-            content={"message": "No results found for your query."}
+            status_code=500,
+            content={"error": f"Internal server error: {str(e)}"}
         )
-    stream = io.StringIO()
-    df.to_csv(stream, index=False)
-    stream.seek(0)
-    return StreamingResponse(
-        stream,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=results.csv"}
-    )
