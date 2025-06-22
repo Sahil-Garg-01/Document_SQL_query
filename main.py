@@ -9,7 +9,7 @@ import json
 
 from db_postgres import PostgresQueryAgent
 from csv_module import CSVQueryAgent
-from excel_module import get_workflow as get_excel_workflow
+from excel_module import ExcelQueryAgent
 from utils import get_csv_schema, get_excel_schema
 
 class UserInput(BaseModel):
@@ -19,7 +19,7 @@ app = FastAPI()
 
 app_graph = PostgresQueryAgent().get_workflow()
 csv_app_graph = CSVQueryAgent().get_workflow()
-excel_app_graph = get_excel_workflow()
+excel_app_graph = ExcelQueryAgent().get_workflow()
 mysql_app_graph = get_mysql_workflow()
 
 
@@ -134,37 +134,64 @@ async def ask_csv(user_input: str = Form(...), file: UploadFile = File(...)):
 
 @app.post("/ask_excel")
 async def ask_excel(user_input: str = Form(...), file: UploadFile = File(...)):
-    user_input_dict = json.loads(user_input)
-    user_input_value = user_input_dict["user_input"]
-    filename = file.filename.lower()
-    if filename.endswith('.xlsx'):
-        engine = "openpyxl"
-    elif filename.endswith('.xls'):
-        engine = "xlrd"
-    else:
-        return JSONResponse(
-            status_code=400,
-            content={"error": "Only Excel files (.xlsx, .xls) are allowed"}
-        )
-    sheets = pd.read_excel(file.file, sheet_name=None, engine=engine)
-    schema = get_excel_schema(sheets)
-    result = excel_app_graph.invoke({"user_input": user_input_value, "excel_schema": schema, "sheets": sheets})
-    df_result = pd.DataFrame(result["results"])
-    if df_result.empty:
-        return JSONResponse(
-            status_code=200,
-            content={"message": "No results found for your query."}
-        )
-    stream = io.StringIO()
-    df_result.to_csv(stream, index=False)
-    stream.seek(0)
-    return StreamingResponse(
-        stream,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=results.csv"}
-    )
+    """
+    Accepts a user query and an Excel file upload, dynamically generates the schema,
+    runs the query using the Excel agent, and returns the results as a CSV file.
+    """
+    try:
+        # Parse user_input as JSON and extract the actual query string
+        user_input_dict = json.loads(user_input)
+        user_input_value = user_input_dict.get("user_input", "")
+        if not user_input_value:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Missing 'user_input' in request."}
+            )
 
+        # Validate file type
+        filename = file.filename.lower()
+        if not (filename.endswith('.xlsx') or filename.endswith('.xls')):
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Only Excel files (.xlsx, .xls) are allowed."}
+            )
+        engine = "openpyxl" if filename.endswith('.xlsx') else "xlrd"
 
+        # Read the uploaded Excel file into a dict of DataFrames
+        sheets = pd.read_excel(file.file, sheet_name=None, engine=engine)
+
+        # Dynamically generate the schema string from the sheets
+        schema = get_excel_schema(sheets)
+
+        # Run the Excel agent workflow
+        result = excel_app_graph.invoke({
+            "user_input": user_input_value,
+            "excel_schema": schema,
+            "sheets": sheets
+        })
+
+        # Prepare the result DataFrame
+        df_result = pd.DataFrame(result["results"])
+        if df_result.empty:
+            return JSONResponse(
+                status_code=200,
+                content={"message": "No results found for your query."}
+            )
+
+        # Stream the results as a downloadable CSV file
+        stream = io.StringIO()
+        df_result.to_csv(stream, index=False)
+        stream.seek(0)
+        return StreamingResponse(
+            stream,
+            media_type="text/csv",
+            headers={"Content-Disposition": "attachment; filename=results.csv"}
+        )
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={"error": f"Internal server error: {str(e)}"}
+        )
 
 
 
