@@ -1,0 +1,31 @@
+# Core FastAPI and web framework dependencies
+fastapi
+uvicorn
+python-multipart
+
+# Data processing and analysis
+pandas
+numpy
+
+# Database connectors
+psycopg2-binary
+mysql-connector-python
+
+# Excel file processing
+openpyxl
+xlrd
+
+# LLM and AI dependencies
+google-generativeai
+
+# LangGraph for workflow orchestration
+langgraph
+
+# Pydantic for data validation
+pydantic    
+
+# Environment variables management
+python-dotenv
+
+# Additional utilities
+typing-extensions
